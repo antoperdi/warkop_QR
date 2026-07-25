@@ -297,3 +297,7 @@ LOG PERUBAHAN & TRANSPARANSI KODE
 64. File: c:\laragon\www\warkop_pertama\resources\views\layouts\admin.blade.php
     - Keterangan Perubahan: Mengubah tampilan navbar admin datar menjadi drop-down collapsible dengan mengelompokkan menu administratif (Kelola Menu, Kelola Meja, Kelola Staf) di bawah tombol dropdown "⚙️ Kelola Warkop".
     - Tujuan: Mencegah kepadatan layout menu navbar admin saat jumlah menu bertambah (agar menu bisa dibuka/ditutup secara praktis).
+
+65. File: c:\laragon\www\warkop_QR\README.md & c:\laragon\www\warkop_QR\public\images\readme_banner.png [NEW]
+    - Keterangan Perubahan: Menulis ulang isi file README.md untuk menjelaskan cara mengakses aplikasi, daftar fitur utama berdasarkan peran pengguna, diagram alur workflow dengan Mermaid, serta petunjuk instalasi dan konfigurasi proyek secara lengkap. Juga menambahkan banner visual premium yang digenerate oleh AI untuk README.md.
+    - Tujuan: Membantu pengguna dan developer baru memahami dengan cepat cara menjalankan dan menggunakan aplikasi Warkop QR.
