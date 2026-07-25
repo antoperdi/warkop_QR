@@ -1,0 +1,299 @@
+LOG PERUBAHAN & TRANSPARANSI KODE
+================================
+
+1. File: c:\laragon\www\warkop_pertama\resources\views\customer\login_page.blade.php
+   - Keterangan Perubahan: Menambahkan blok conditional rendering Blade (`@if(session('error'))` dan `@if(session('success'))`) di atas elemen tautan tombol login Google.
+   - Tujuan: Menampilkan pesan sukses atau error hasil login via Google yang dilempar dari controller agar pengguna mendapatkan visualisasi yang jelas atas hasil autentikasi.
+
+2. File: c:\laragon\www\warkop_pertama\app\Http\Controllers\GoogleAuthController.php
+   - Fungsi yang diubah: handleGoogleCallback()
+   - Keterangan Perubahan:
+     * Mengganti metode `Customer::updateOrCreate` yang rentan memicu QueryException duplikasi email unik.
+     * Alur logika baru:
+       - Mencari pelanggan berdasarkan `google_id` terlebih dahulu via `Customer::where('google_id', ...)->first()`.
+       - Jika tidak ditemukan, mencari berdasarkan `email` via `Customer::where('email', ...)->first()`.
+       - Jika ditemukan dengan `email`, tautkan/update `google_id` dari Google.
+       - Jika tidak ditemukan sama sekali, baru dibuatkan pelanggan baru via `Customer::create()`.
+     * Menambahkan penangkapan stack error di blok catch menggunakan `\Illuminate\Support\Facades\Log::error('Google Auth Error: ' . $e->getMessage(), ['exception' => $e])`.
+     * Mengubah pesan error session flash untuk meneruskan pesan Exception asli (`$e->getMessage()`) ke halaman login agar lebih mudah didebug oleh pengembang/pengguna.
+
+3. File: C:\laragon\bin\php\php-8.3.16-Win32-vs16-x64\php.ini
+   - Keterangan Perubahan:
+     * Mengubah setting `curl.cainfo` dari `"D:\Projects\Laragon-installer\..."` menjadi `"C:\laragon\etc\ssl\cacert.pem"`.
+     * Mengaktifkan setting `openssl.cafile` ke `"C:\laragon\etc\ssl\cacert.pem"`.
+   - Tujuan: Menyediakan CA cert bundle yang valid untuk PHP cURL & OpenSSL di Windows/Laragon guna memperbaiki "cURL error 77" saat memanggil API HTTPS Google.
+
+4. File: c:\laragon\www\warkop_pertama\routes\web.php
+   - Keterangan Perubahan:
+     * Mengubah rute `/table/{token}` agar mencari data Meja berdasarkan `qr_token` via `Table::where('qr_token', $token)->first()` dan mengirimkannya ke view `customer.menu` via `compact('table')`.
+     * Menambahkan nama rute `->name('customer.menu')` pada rute fallback `/customer/menu`.
+   - Tujuan: Mengirimkan data meja aktif agar nama meja dapat ditampilkan secara dinamis di samping teks "Warkop Digital" pada navbar halaman menu, serta menyediakan penamaan rute yang valid untuk digunakan pada tombol kembali di halaman pembayaran.
+
+5. File: c:\laragon\www\warkop_pertama\resources\views\customer\menu.blade.php
+   - Keterangan Perubahan:
+     * Mengubah redirect hardcoded javascript `/customer/payment/` setelah proses checkout berhasil menjadi menggunakan route helper dinamis Laravel: `{{ route('customer.payment', 'TEMP_ORDER_NUM') }}`.
+     * Mengubah placeholder parameter rute yang awalnya menggunakan `':order_number'` menjadi `'TEMP_ORDER_NUM'` agar tidak ter-encode menjadi `'%3Aorder_number'` oleh Laravel.
+     * Menghilangkan alert pop-up sukses bawaan browser agar alur terasa lebih instan dan modern.
+     * Memperbaiki logika di fungsi `renderCart()` agar tidak mencari dan menyisipkan kembali elemen `#empty-cart-msg` dengan `document.getElementById` (yang sudah terhapus akibat `innerHTML = ''`), melainkan menuliskan string tag HTML-nya secara langsung.
+   - Tujuan: Menghindari error 404 (Halaman Tidak Ditemukan) jika aplikasi dijalankan di subfolder server lokal, menyelesaikan crash Javascript `TypeError: Cannot read properties of null (reading 'style')` ketika keranjang belanja dikosongkan setelah pesanan masuk, serta memberikan pengalaman pengguna yang lebih cepat dan mulus.
+
+6. File: c:\laragon\www\warkop_pertama\database\migrations\2026_07_08_210328_add_payment_proof_to_orders_table.php [NEW]
+   - Keterangan Perubahan: Menambahkan kolom `payment_proof` (string, nullable) setelah kolom `status` pada tabel `orders`.
+   - Tujuan: Menyimpan nama berkas/bukti transfer pembayaran ke database.
+
+7. File: c:\laragon\www\warkop_pertama\app\Models\Order.php
+   - Keterangan Perubahan: Menambahkan `'payment_proof'` ke dalam array properti `$fillable`.
+   - Tujuan: Memperbolehkan mass-assignment kolom `payment_proof` saat menyimpan path file bukti transfer.
+
+8. File: c:\laragon\www\warkop_pertama\app\Http\Controllers\PaymentController.php [NEW]
+   - Keterangan Perubahan:
+     * Menambahkan baris proteksi CodeIgniter 3 di atas file sesuai aturan proyek: `defined('BASEPATH') OR exit('No direct script access allowed');` (dengan inisialisasi trick `BASEPATH` agar tidak memicu exit di Laravel).
+     * Membuat fungsi `show($order_number)` untuk merender view payment setelah divalidasi kepemilikannya oleh `Auth::guard('customer')->id()`.
+     * Membuat fungsi `uploadProof(Request $request, $order_number)` untuk memvalidasi unggahan gambar, menyimpan file ke storage, mencatat path file ke database order, serta mengubah status order menjadi `'processing'`.
+   - Tujuan: Memisahkan logika closure dari file rute ke Controller (pola MVC) serta mengamankan transaksi dengan memvalidasi kepemilikan data pesanan (mencegah manipulasi pesanan milik orang lain).
+
+9. File: c:\laragon\www\warkop_pertama\routes\web.php
+   - Keterangan Perubahan:
+     * Mengimpor `App\Http\Controllers\PaymentController`.
+     * Mengarahkan rute `/customer/payment/{order_number}` dan `/customer/payment/{order_number}/upload` ke controller `PaymentController`.
+   - Tujuan: Kepatuhan pola MVC di mana urusan penanganan request sepenuhnya diproses di Controller.
+
+10. File: c:\laragon\www\warkop_pertama\resources\views\customer\payment.blade.php
+    - Keterangan Perubahan:
+      * Memindahkan kontainer `<form>` unggah bukti transfer ke dalam blok `accordion-body` milik pilihan "Transfer Bank BRI" (`#opsiBRI`).
+      * Membersihkan elemen form bukti transfer yang sebelumnya menggantung di luar accordion.
+      * Menambahkan tombol alternatif default "Kembali / Bayar Langsung di Kasir" di bagian bawah kartu.
+    - Tujuan: Menerapkan interaksi dinamis yang bersih di mana form pengiriman bukti transfer hanya muncul saat pelanggan memilih metode "Transfer Bank BRI", sementara untuk metode kasir pelanggan hanya disuguhkan tombol penyelesaian langsung tanpa form unggah berkas.
+
+11. File: c:\laragon\www\warkop_pertama\resources\views\customer\partials\navbar.blade.php [NEW]
+    - Keterangan Perubahan: Membuat partial view navbar modular baru dengan menu Daftar Menu, Riwayat Pemesanan, sapaan nama pelanggan, dan tombol Logout. Dilengkapi fallback pencarian objek meja aktif dari session.
+    - Tujuan: Menyatukan menu navigasi pelanggan secara terstruktur dan terpusat (DRY).
+
+12. File: c:\laragon\www\warkop_pertama\resources\views\customer\menu.blade.php
+    - Keterangan Perubahan: Mengganti navbar statis dengan `@include('customer.partials.navbar')`.
+    - Tujuan: Menampilkan navbar modular baru di halaman daftar menu.
+
+13. File: c:\laragon\www\warkop_pertama\resources\views\customer\payment.blade.php
+    - Keterangan Perubahan: Mengganti navbar statis dengan `@include('customer.partials.navbar')`.
+    - Tujuan: Menampilkan navbar modular baru di halaman pembayaran.
+
+14. File: c:\laragon\www\warkop_pertama\app\Http\Controllers\OrderController.php
+    - Keterangan Perubahan: Menambahkan method `history()` untuk mengambil data pesanan beserta item milik customer aktif, lalu mengarahkannya ke view `customer.history`.
+    - Tujuan: Menyediakan data histori belanja pelanggan di sisi server (Controller).
+
+15. File: c:\laragon\www\warkop_pertama\resources\views\customer\history.blade.php [NEW]
+    - Keterangan Perubahan: Membuat halaman riwayat pemesanan yang responsif, menyajikan data nota, tanggal, meja, nama produk, status pembayaran (belum bayar, verifikasi kasir, selesai, batal) beserta tombol aksi "Bayar" untuk nota pending.
+    - Tujuan: Memberikan transparansi daftar pesanan bagi pelanggan.
+
+16. File: c:\laragon\www\warkop_pertama\routes\web.php
+    - Keterangan Perubahan: Menambahkan rute GET `/customer/history` ke `OrderController@history` dengan nama rute `customer.history`.
+    - Tujuan: Mendaftarkan rute menu riwayat pemesanan.
+
+17. File: c:\laragon\www\warkop_pertama\app\Http\Requests\StoreOrderRequest.php [NEW]
+    - Keterangan Perubahan: Membuat berkas Form Request baru untuk menangani logika validasi dan otorisasi pesanan baru pelanggan secara terpisah dari Controller.
+    - Tujuan: Menerapkan praktik pemisahan tugas (*separation of concerns*) dan validasi input yang ketat demi mematuhi aturan Laravel 12.
+
+18. File: c:\laragon\www\warkop_pertama\app\Http\Requests\UploadPaymentProofRequest.php [NEW]
+    - Keterangan Perubahan: Membuat berkas Form Request baru untuk menangani logika validasi unggahan berkas bukti transfer (limit 2MB, ekstensi gambar).
+    - Tujuan: Melindungi server dari unggahan file berbahaya (*malicious file upload*) dengan memisahkan validasi dari Controller.
+
+19. File: c:\laragon\www\warkop_pertama\app\Http\Controllers\OrderController.php
+    - Keterangan Perubahan:
+      * Menggunakan `StoreOrderRequest` dan menghapus validasi manual `$request->validate()`.
+      * Mengubah penanganan exception di catch block agar merekam log kesalahan asli ke file log server (`Log::error`) dan menyembunyikan pesan error internal (`$e->getMessage()`) dengan pesan umum yang aman.
+    - Tujuan: Mencegah kebocoran struktur data database ke client saat terjadi error (*security by obscurity*).
+
+20. File: c:\laragon\www\warkop_pertama\app\Http\Controllers\PaymentController.php
+    - Keterangan Perubahan:
+      * Menghapus baris boilerplate non-Laravel `defined('BASEPATH') ...`.
+      * Menggunakan `UploadPaymentProofRequest` pada method `uploadProof()` dan menghapus logika validasi manual.
+      * Membungkus fungsi unggah bukti pembayaran dalam blok `try-catch` serta menyembunyikan error mentah sistem dari klien.
+    - Tujuan: Standardisasi penuh ke Laravel 12 dan mengamankan penanganan error unggah berkas.
+
+21. File: c:\laragon\www\warkop_pertama\app\Http\Controllers\GoogleAuthController.php
+    - Keterangan Perubahan: Mengubah catch block callback Google agar tidak mencetak Exception mentah `$e->getMessage()` ke response redirect halaman login.
+    - Tujuan: Mencegah kebocoran detail kredensial API eksternal atau konfigurasi sistem ke publik.
+
+22. File: c:\laragon\www\warkop_pertama\database\seeders\UserSeeder.php [NEW]
+    - Keterangan Perubahan: Membuat seeder untuk akun admin pertama (`admin@warkop.com`, password: `password`, role: `super_admin`).
+    - Tujuan: Menyediakan akun admin pertama untuk login panel admin.
+
+23. File: c:\laragon\www\warkop_pertama\database\seeders\DatabaseSeeder.php
+    - Keterangan Perubahan: Mendaftarkan `UserSeeder::class` pada method `run()`.
+    - Tujuan: Memastikan akun admin terbuat saat database dijalankan seeding-nya.
+
+24. File: c:\laragon\www\warkop_pertama\app\Http\Requests\admin\StoreProductRequest.php [NEW]
+    - Keterangan Perubahan: Membuat berkas Form Request untuk validasi pembuatan menu produk (nama, harga, deskripsi, upload file gambar).
+    - Tujuan: Kepatuhan validasi input ketat terpisah demi standar Laravel 12.
+
+25. File: c:\laragon\www\warkop_pertama\app\Http\Requests\admin\UpdateProductRequest.php [NEW]
+    - Keterangan Perubahan: Membuat berkas Form Request untuk validasi pembaruan menu produk.
+    - Tujuan: Standardisasi pemisahan tugas input data menu.
+
+26. File: c:\laragon\www\warkop_pertama\app\Http\Controllers\admin\AdminAuthController.php [NEW]
+    - Keterangan Perubahan: Membuat Controller untuk melayani penampilan form login admin, proses autentikasi (guard `web`), dan proses logout.
+    - Tujuan: Keamanan gerbang autentikasi panel admin.
+
+27. File: c:\laragon\www\warkop_pertama\app\Http\Controllers\admin\ProductManagementController.php [NEW]
+    - Keterangan Perubahan: Membuat Controller CRUD pengelolaan menu produk warkop lengkap dengan penanganan file upload gambar, validasi Form Request, toggle status ketersediaan, serta proteksi error log.
+    - Tujuan: Mengatur logika manipulasi data menu.
+
+28. File: c:\laragon\www\warkop_pertama\resources\views\layouts\admin.blade.php [NEW]
+    - Keterangan Perubahan: Membuat file layout terpadu admin dengan menu navigasi yang responsif dan premium.
+    - Tujuan: Sebagai layout modular panel admin.
+
+29. File: c:\laragon\www\warkop_pertama\resources\views\admin\products\index.blade.php [NEW]
+    - Keterangan Perubahan: Tampilan index tabel menu yang dilengkapi dengan badge status keaktifan menu dan tombol aksi CRUD terintegrasi.
+    - Tujuan: Panel utama pengelolaan produk.
+
+30. File: c:\laragon\www\warkop_pertama\resources\views\admin\products\create.blade.php [NEW]
+    - Keterangan Perubahan: Formulir penambahan menu baru dengan upload gambar.
+    - Tujuan: Form tambah menu.
+
+31. File: c:\laragon\www\warkop_pertama\resources\views\admin\products\edit.blade.php [NEW]
+    - Keterangan Perubahan: Formulir edit menu dengan preview gambar menu lama.
+    - Tujuan: Form edit menu.
+
+32. File: c:\laragon\www\warkop_pertama\routes\web.php
+    - Keterangan Perubahan:
+      * Menambahkan rute tamu admin (`GET /admin/login`, `POST /admin/login`).
+      * Menambahkan grup rute terproteksi middleware `auth` untuk panel admin (`/admin`), CRUD menu, toggle status produk, dan logout admin.
+      * Memperbarui rute customer `/table/{token}` dan `/customer/menu` agar menarik data menu aktif dari database (`Product::where('is_available', true)->get()`).
+    - Tujuan: Registrasi rute admin dan integrasi data menu dinamis.
+
+33. File: c:\laragon\www\warkop_pertama\resources\views\customer\menu.blade.php
+    - Keterangan Perubahan: Mengganti menu statis HTML lama dengan iterasi Blade `@foreach($products as $product)` dinamis, serta mendukung render gambar dinamis dari folder storage.
+    - Tujuan: Menampilkan data menu secara real-time dari database ke pelanggan.
+
+34. File: c:\laragon\www\warkop_pertama\app\Http\Requests\admin\StoreTableRequest.php [NEW]
+    - Keterangan Perubahan: Membuat berkas Form Request baru untuk menangani logika validasi dan otorisasi pembuatan meja baru (`table_number` harus unik).
+    - Tujuan: Menjamin validasi input yang ketat demi mematuhi aturan keamanan Laravel 12.
+
+35. File: c:\laragon\www\warkop_pertama\app\Http\Requests\admin\UpdateTableRequest.php [NEW]
+    - Keterangan Perubahan: Membuat berkas Form Request baru untuk menangani logika validasi pembaruan meja warkop.
+    - Tujuan: Pemisahan logika validasi input update meja secara terstruktur.
+
+36. File: c:\laragon\www\warkop_pertama\app\Http\Controllers\admin\TablesManagementController.php
+    - Keterangan Perubahan:
+      * Menyelaraskan logika controller agar memanipulasi data model `Table` (bukan model `Product`).
+      * Menggunakan `StoreTableRequest` dan `UpdateTableRequest` untuk validasi.
+      * Menyertakan generator token QR otomatis menggunakan `bin2hex(random_bytes(10))` saat pembuatan meja.
+      * Menghubungkan redirect ke rute `admin.tabel.index` dan meload view di folder `admin.tabel` yang benar.
+    - Tujuan: Menyediakan logika CRUD meja warkop yang fungsional, bersih, dan aman.
+
+37. File: c:\laragon\www\warkop_pertama\routes\web.php
+    - Keterangan Perubahan:
+      * Mengimpor `App\Http\Controllers\admin\TablesManagementController`.
+      * Mendaftarkan rute resource CRUD meja (`/admin/tabel`, nama rute: `admin.tabel`) serta rute toggle keaktifan meja (`admin.tabel.toggle`) di dalam grup middleware `auth`.
+    - Tujuan: Registrasi rute manajemen meja warkop.
+
+38. File: c:\laragon\www\warkop_pertama\resources\views\layouts\admin.blade.php
+    - Keterangan Perubahan: Mengubah link menu navigasi "Kelola Meja" agar mengarah ke rute `admin.tabel.index` (serta menandai status menu aktif secara dinamis melalui helper `Route::is`).
+    - Tujuan: Memudahkan navigasi panel admin antara modul menu produk dan modul meja warkop.
+
+39. File: c:\laragon\www\warkop_pertama\resources\views\admin\tabel\index.blade.php
+    - Keterangan Perubahan: Menulis ulang halaman tabel meja warkop agar meload variabel `$tables`, menampilkan nomor meja, token QR, link akses meja (scan meja), dan status keaktifan, serta menyediakan tombol aksi CRUD lengkap dan fungsionalitas salin link (copy to clipboard).
+    - Tujuan: Menyediakan antarmuka panel daftar meja warkop yang premium dan responsif.
+
+40. File: c:\laragon\www\warkop_pertama\resources\views\admin\tabel\create.blade.php [NEW]
+    - Keterangan Perubahan: Membuat form input penambahan meja baru warkop.
+    - Tujuan: Formulir tambah meja.
+
+41. File: c:\laragon\www\warkop_pertama\resources\views\admin\tabel\edit.blade.php [NEW]
+    - Keterangan Perubahan: Membuat form edit meja beserta opsi switch aktif/nonaktif.
+    - Tujuan: Formulir perbarui meja.
+
+42. File: c:\laragon\www\warkop_pertama\app\Http\Requests\admin\StoreCashierRequest.php [NEW]
+    - Keterangan Perubahan: Membuat berkas Form Request untuk validasi pendaftaran staf kasir baru (email unik, sandi minimal 8 karakter).
+    - Tujuan: Validasi input pembuatan akun kasir baru.
+
+43. File: c:\laragon\www\warkop_pertama\app\Http\Requests\admin\UpdateCashierRequest.php [NEW]
+    - Keterangan Perubahan: Membuat berkas Form Request untuk validasi perubahan data akun kasir.
+    - Tujuan: Validasi input pembaruan akun kasir.
+
+44. File: c:\laragon\www\warkop_pertama\app\Http\Controllers\admin\OrderManagementController.php [NEW]
+    - Keterangan Perubahan: Membuat Controller untuk melayani penampilan daftar pesanan masuk (eager loading relasi customer dan table), detail rincian belanja pelanggan, serta pembaruan status transaksi.
+    - Tujuan: Menyediakan modul kelola pesanan masuk untuk admin/kasir.
+
+45. File: c:\laragon\www\warkop_pertama\app\Http\Controllers\admin\CashierManagementController.php [NEW]
+    - Keterangan Perubahan: Membuat Controller CRUD pengelolaan akun kasir (registrasi dengan hash password, edit/reset sandi, hapus) khusus diakses role `super_admin`.
+    - Tujuan: Logika bisnis pengelolaan akun kasir.
+
+46. File: c:\laragon\www\warkop_pertama\routes\web.php
+    - Keterangan Perubahan:
+      * Mengimpor `OrderManagementController` dan `CashierManagementController`.
+      * Mendaftarkan rute daftar pesanan (`admin.orders.index`, `admin.orders.show`, dan `admin.orders.updateStatus`).
+      * Mendaftarkan rute resource CRUD kasir (`admin.cashiers.*`) di bawah middleware `auth`.
+    - Tujuan: Registrasi rute admin pesanan dan kasir.
+
+47. File: c:\laragon\www\warkop_pertama\resources\views\layouts\admin.blade.php
+    - Keterangan Perubahan: Menambahkan menu navigasi "Kelola Pesanan" dan menu "Kelola Kasir" (dibatasi `@if` role `super_admin`) pada navbar admin.
+    - Tujuan: Memperluas navigasi dashboard admin.
+
+48. File: c:\laragon\www\warkop_pertama\resources\views\admin\orders\index.blade.php [NEW]
+    - Keterangan Perubahan: Membuat halaman tabel daftar pesanan masuk pelanggan yang responsif (`overflow-x: auto`) dengan badge status warna-warni.
+    - Tujuan: Menampilkan daftar transaksi.
+
+49. File: c:\laragon\www\warkop_pertama\resources\views\admin\orders\show.blade.php [NEW]
+    - Keterangan Perubahan: Membuat halaman detail pesanan yang menampilkan komposisi produk, data diri pemesan, form ganti status pesanan, dan preview foto struk bukti transfer.
+    - Tujuan: Panel validasi nota pembayaran dan status sajian.
+
+50. File: c:\laragon\www\warkop_pertama\resources\views\admin\cashiers\index.blade.php [NEW]
+    - Keterangan Perubahan: Membuat halaman tabel daftar akun kasir aktif.
+    - Tujuan: Panel utama kelola staf kasir.
+
+51. File: c:\laragon\www\warkop_pertama\resources\views\admin\cashiers\create.blade.php [NEW]
+    - Keterangan Perubahan: Membuat form registrasi staf kasir baru.
+    - Tujuan: Formulir daftar kasir.
+
+52. File: c:\laragon\www\warkop_pertama\resources\views\admin\cashiers\edit.blade.php [NEW]
+    - Keterangan Perubahan: Membuat form edit data kasir dan opsi reset password.
+    - Tujuan: Formulir perbarui kasir.
+
+53. File: c:\laragon\www\warkop_pertama\routes\web.php
+    - Keterangan Perubahan: Menambahkan import `App\Http\Controllers\admin\peasan_langsungController` dan mendefinisikan rute GET `/admin/pesan-langsung` (nama: `admin.direct_order.index`) dan POST `/admin/pesan-langsung` (nama: `admin.direct_order.store`) di bawah grup middleware `auth`.
+    - Tujuan: Mendaftarkan rute kasir pesan langsung untuk admin.
+
+54. File: c:\laragon\www\warkop_pertama\app\Http\Controllers\admin\peasan_langsungController.php [NEW]
+    - Keterangan Perubahan: Membuat controller baru `peasan_langsungController` dengan metode `index()`, serta `store()` untuk memproses pesanan langsung dengan status langsung `completed`. Rute ini secara otomatis membuat atau mencocokkan pesanan dengan meja kasir khusus bernama 'Pesan Langsung'. Dilengkapi dengan proteksi BASEPATH.
+    - Tujuan: Menangani logika backend pembuatan pesanan kasir secara instan tanpa perlu meja fisik.
+
+55. File: c:\laragon\www\warkop_pertama\resources\views\admin\pesan_langsung\index.blade.php [NEW]
+    - Keterangan Perubahan: Membuat tampilan kasir pesan langsung dengan pembagian kolom (kiri: keranjang interaktif, kanan: produk grid) yang terintegrasi pencarian instan dan javascript state. Menambahkan pendefinisian fungsi helper `html_escape()` secara aman di bagian atas view, dan menghapus input pemilihan nomor meja.
+    - Tujuan: Menyediakan antarmuka Point of Sale (POS) bagi Super Admin / Kasir yang mandiri tanpa perlu memilih meja.
+
+56. File: c:\laragon\www\warkop_pertama\resources\views\layouts\admin.blade.php
+    - Keterangan Perubahan: Menambahkan menu navigasi "Pesan Langsung" pada navbar panel admin, serta menyembunyikan link "Kelola Menu" dan "Kelola Meja" untuk pengguna dengan peran selain `super_admin`.
+    - Tujuan: Menyesuaikan tampilan navigasi navbar admin berdasarkan tingkat hak akses (role).
+
+57. File: c:\laragon\www\warkop_pertama\app\Http\Middleware\CheckSuperAdmin.php [NEW]
+    - Keterangan Perubahan: Membuat middleware `CheckSuperAdmin` untuk memblokir akses rute admin sensitif jika pengguna terautentikasi bukan `super_admin`.
+    - Tujuan: Keamanan otorisasi tingkat rute (backend route-level protection).
+
+58. File: c:\laragon\www\warkop_pertama\bootstrap\app.php
+    - Keterangan Perubahan: Mendaftarkan middleware `CheckSuperAdmin` dengan alias `super_admin`.
+    - Tujuan: Mempermudah penggunaan middleware super_admin pada grup rute web.
+
+59. File: c:\laragon\www\warkop_pertama\database\migrations\2026_07_25_002036_add_cashier_id_to_orders_table.php [NEW]
+    - Keterangan Perubahan: Membuat migrasi baru untuk menambahkan kolom `cashier_id` (foreign key ke tabel `users(id)`, nullable) di tabel `orders`.
+    - Tujuan: Menyimpan data penginput/kasir yang memasukkan transaksi secara langsung.
+
+60. File: c:\laragon\www\warkop_pertama\app\Models\Order.php
+    - Keterangan Perubahan: Menambahkan `'cashier_id'` ke properti `$fillable` dan mendefinisikan relasi `cashier()` ke model `User`.
+    - Tujuan: Pemrosesan data order dan relasi kasir di sisi Eloquent ORM.
+
+61. File: c:\laragon\www\warkop_pertama\app\Http\Controllers\admin\peasan_langsungController.php
+    - Keterangan Perubahan: Mengisi nilai `'cashier_id' => auth()->id()` saat melakukan create data Order pada metode `store()`.
+    - Tujuan: Menyimpan info kasir aktif secara otomatis ke database saat pesan langsung diselesaikan.
+
+62. File: c:\laragon\www\warkop_pertama\routes\web.php
+    - Keterangan Perubahan: Membungkus rute produk, meja, dan kasir dengan middleware `super_admin`, serta mengubah rute `/admin` agar me-redirect kasir ke rute `/admin/pesan-langsung` dan super admin ke `/admin/products`.
+    - Tujuan: Membatasi hak akses kasir agar tidak bisa membuka menu produk, meja, dan kasir secara langsung melalui URL.
+
+63. File: c:\laragon\www\warkop_pertama\resources\views\admin\orders\index.blade.php & show.blade.php
+    - Keterangan Perubahan: Menampilkan informasi kasir penginput di bawah nama pelanggan pada tabel index dan pada informasi pelanggan di halaman detail pesanan.
+    - Tujuan: Memberikan visibilitas kasir penginput di riwayat transaksi.
+
+64. File: c:\laragon\www\warkop_pertama\resources\views\layouts\admin.blade.php
+    - Keterangan Perubahan: Mengubah tampilan navbar admin datar menjadi drop-down collapsible dengan mengelompokkan menu administratif (Kelola Menu, Kelola Meja, Kelola Staf) di bawah tombol dropdown "⚙️ Kelola Warkop".
+    - Tujuan: Mencegah kepadatan layout menu navbar admin saat jumlah menu bertambah (agar menu bisa dibuka/ditutup secara praktis).
